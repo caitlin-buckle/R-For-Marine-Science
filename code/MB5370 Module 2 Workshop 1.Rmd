@@ -6,25 +6,283 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE,
+	include = TRUE,
+	message = FALSE,
+	warning = FALSE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+Load required packages 
+```{r}
+library(tidyverse)
+library(readxl)
+library(here)
+library(palmerpenguins)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+Your computers activity memory can retain hidden values/old variables etc. To eliminate this issue, establish a base workflow at the top of every fresh script file, using the code below. 
+```{r,results='hide'}
+## Inventory every active object currently residing in session RAM
+objects()
+## Purge global environment
+rm(list = ls())
+# Confirm that global session memory now completely vacant
+objects()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Section 1.4: Ingesting Data into R 
+Practicing reading different kinds of data files into R
+```{r}
+#Practice One: a standard csv (comma-separated plain text file)
+benthic_cover<-read.csv(here::here("data/reef_cover_log.csv")) #6 observations, 7 variables 
+#the here::here section of the code is telling R to start at the master folder (where your project file is held), and use this as the starting point when searching for the file you are trying to load. Then we specify we want it to look in the "data" folder, for the file named reef_cover_log.csv. If we didn't use here::here, we would have it going through specific files in our computer, which isn't reproducible for other people as they will not have the same user profiles etc. on their computer. The more you know! 
+
+#Practice Two: Parsing a tab-separated telemetry instrument array string 
+acoustic_stream<-read_tsv(here::here("data/acoustic_telemetry_stream.txt")) #6 observations, 5 variables 
+#Parsing means taking the raw text file, breaking it down and translating it into a format that R understands 
+
+#Practice Three: Targeting a specific sheet in a multi-tab Excel spreadsheet 
+fisheries_annual<-read_excel(here::here("data/fish_catch_data.xlsx"),sheet="Commercial_2026") #5 observations, 6 variables 
+```
+
+If we record notes or convserational summary lines at the top of Excel data sheets, R will treat these at your database column headers, which will corrupt your entire data ingestion pipeline. 
+
+#### EXAMPLE: using mangrove_survey_raw.csv 
+
+```{r}
+mangrove_data<-read_csv(file=here::here("data/mangrove_survey_raw.csv"))
+#Although the .csv file reads into R, the notes at the top of the excel sheet for field team have been read in as the column header, and the other notes have been entered as variables under that column header. Not what we want!
+
+#We can use arguments within read_csv to skip headers and declare missing flags. 
+mangrove_data<-read_csv(here::here("data/mangrove_survey_raw.csv"),
+                        skip = 5, #skips the first 5 lines of the .csv file, which are the notes and not the data)
+                        na=c(".","NA","9999","ND","blank")) #Converts known text alternatives into NA (you can change what you want changed to NA based on what has been used in your dataset)
+
+#mangrove_data now has 6 observations of 6 variables, and none of the notes made at the top of the excel sheet have been translated into our data frame. 
+```
+
+### Section 1.5: Data Frame Architectures: Tibble versus Legacy Tables 
+
+When you import assets using tidyverse commands, the resulting object is stored is a structure called a tibble. Whilst a tibble is still fundamentally a base R data frame, its underlying software architecture has been optimised to prevent common data corruption erros and console performance issues. Understanding how these two data structures behave differently under pressure is essential for error diagnostics. 
+
+#### EXAMPLE of behavioural difference of Base R data frame and modern tidyverse tibble 
+
+```{r, results='hide'}
+#force a modern tibble to degrade into a legacy base R data frame structure 
+benthic_cover_df<-as.data.frame(benthic_cover)
+
+print(benthic_cover_df) #Print old-style data frame 
+print(benthic_cover) #compare with tibble alternative 
+#Tibble structure immediately tells you its dimensions and highlights variable configurations right below the column headers - this is the primary defense against typing errors 
+```
+
+### Section 1.6: Wrangling Out Ecological Signals Using Palmer Penguins
+
+palmerpenguins dataset contains multi-species morphological tracking records collected at Palmer Station long-term ecological research site in Antarctica. 
+
+```{r,results='hide'}
+data("penguins")
+
+#IMPORTANT!! Examine the structure of the data set - this should always be done when loading a new data set! 
+glimpse(penguins) #uses tidyverse() package. Also maps out the architectural anatomy of your data set (helpful!!), with variable types listed within arrow markers (e.g., <fct>)
+str(penguins) #ALTERNATIVE: base R version 
+
+summary(penguins) #generates an exploratory summary matrix, handy to view statistical overview to map out missing obs and parameter boundaries 
+```
+
+### Section 1.7: Foundational Grammar: Slicing, Filtering, Sorting, and Transforming 
+
+#### Section 1.7.1: Isolating Attributes with select() 
+
+Ecological data frequently collect duplicate logistics records that do not contribute to morphological or physiological questions. Select() allows you to slice your data sets vertically, allowing you to isolate or drop columns based on variable names 
+
+#### EXAMPLE 
+
+```{r}
+morphology_metrics<-select(penguins,species,bill_length_mm,bill_depth_mm,body_mass_g) #vertically slices specific morphometric variables by explicit name (e.g., species, bill_length_mm etc.)
+glimpse(morphology_metrics)
+
+spatial_block<-select(penguins,species:island) #retain a continuous block of attributes using the colon operator (:)
+
+clean_scientific_fields<-select(penguins,-year) #discard logistic tracking attributes (in this case year) while preserving everything else - use the '-'/minus sign 
+```
+
+#### Section 1.7.1: Sifting rows with filter() 
+
+filter() isolates records horizontally based on targeted conditional parameters. R evaluates every row against your logical expressions, and will retain entries that evaluate to TRUE and drop those returning FALSE or NA. 
+
+```{r}
+adelie_cohort<-filter(penguins,species=="Adelie") #isolates observations to only those belonging to single target group (Adelie in this context)
+
+heavy_penguins<-filter(penguins,body_mass_g>4500) #sifts through observations using continuous numerical boundary thresholds (e.g., < or > a certain weight) - in this context, it is filtering for penguins with a mass greater than 4500g 
+
+biscoe_gentoo<-filter(penguins,species=="Gentoo"&island=="Biscoe") #filters data set to include only observations of Gentoo penguins at Biscoe (island)
+
+sub_islands<-filter(penguins,island%in%c("Dream","Torgersen")) #filters data set to include only observations made at Dream Island or Torgersen Island, the %in% operator is acting as a matching director (e.g., are these islands found in our data set, and if so please separate into a new data frame sub_islands)
+```
+
+#### Section 1.7.3: Ordering sequences with arrange() 
+
+arrange() alters the sorting configuration of rows within your dataframe without changing individual cell values - essential for inspecting size hierarchies or chronologically ordering long-term environmental observations lines. 
+
+```{r}
+lightest_first<-arrange(penguins,body_mass_g) #sorts by descending body mass (NOTE: the default setting is to list the smallest values first)
+
+heaviest_first<-arrange(penguins,desc(body_mass_g)) #sorts penguins by body weight in descending sequence (from the default), using the desc() layout wrapper 
+
+stratified_morpohlogy<-arrange(penguins,species,desc(bill_length_mm)) #generates nested sorting criteria, penguins are first grouped by species, then sorted by descending bill length (longest to shortest) 
+```
+
+#### Section 1.7.4: Introducting the Pipe (|>)
+
+The pipe allows us to chain operations together, meaning you can pass data through a series of transformations in a single, linear flow. Without a pipe, you have to read the code inside-out (e.g., you start in the middle, perform the mutate(), then wrap that in a filter(), and then wrap that all in a select()). With a pipe, you read from left to right, or top to bottom (e.g., you take your data, then you filter it, then you mutate it to create a new column, then you select the columns that you need). 
+
+Syntax for native R pipe is |>, although there is a pipe operator built into the tidyverse package magrittr which is very common (%>%)
+
+#### EXAMPLE 
+
+```{r}
+#Instead of doing this 
+penguins_subset<-mutate(penguins,bill_ratio=bill_length_mm/bill_depth_mm)
+penguins_final<-filter(penguins_subset,species=="Adelie") #isolated steps that must be run in sequential order 
+
+#Using pipe operator 
+penguins_final<-penguins|>mutate(bill_ratio=bill_length_mm/bill_depth_mm)|>filter(species=="Adelie") #singular step to run, code is easier to read and debug, and more efficient to write 
+```
+
+#### Section 1.7.5: Computing New Attributes with mutate() 
+
+It is common in marine science/ecology to need to calculate new variables based on ones that preexist in our raw data. In data wrangling, this is called "mutating" and can be done using mutate() function. 
+
+```{r}
+penguin_ratios<-penguins|>mutate(body_mass_kg=body_mass_g/1000, #converts body weight in grams to kg
+                                  bill_ratio=bill_length_mm/bill_depth_mm #calculate bill ratio 
+                                  )
+glimpse(penguin_ratios) #new variables in our data frame penguin_ratios, titled body_mass_kg and bill_ratio 
+```
+
+### Section 1.8: Data Aggregation and Ecological Summarisation 
+
+To extract meaningful biological conclusions (e.g., determining whether morphological allometry varies by species or island group), you must compress thousands of individual observations into explicit population summary metrics - this is achieved using the dual layered combination of group_by() and summarise(). 
+
+When you apply group_by(), R does not alter the physical appearance of the table, instead it alters how it interacts with subsequent functions by creating hidden, virtual data buckets based on categorical factor levels. When you immediately follow this with summarise(), R calculates targeted statistical reductions for each individual bucket and collapses them into a brand-new summary tibble. 
+
+```{r}
+grouped_penguins<-group_by(penguins,species) #grouping penguins by species 
+print(grouped_penguins) #table looks identical to base penguins data frame, but with an additional metadata note of Groups: species [3] at the top 
+
+species_mass_summary<-summarise(grouped_penguins,mean_mass_g=mean(body_mass_g))
+print(species_mass_summary) #summarises data frame grouped_penguins and their mean body mass (g) - PROBLEM: Adelie and Gentoo species have returned NA for mean_mass_g. Why? 
+```
+
+The summary operation for Adelie and Gentoo failed and returned NA due to a behavioural design feature of R called the Missing Value trap. If a column contains even only one missing observation flag (NA), any mathematical aggregation function will automatically return NA to protect you from miscalculating metrics on incomplete data. To override this safely, you must explicitly declare that missing cells should be dropped during calculation. 
+
+This can be completed using the magrittr pipe to wrangle our data and avoid the missing value trap. 
+
+```{r}
+biological_signal<-penguins %>%
+  group_by(species,sex)%>%
+  summarise( 
+    sample_size=n(), # count total individuals per category 
+                  mean_mass_g=mean(body_mass_g,na.rm=TRUE), #calculate mean ignoring missing cells 
+                  sd_mass_g=sd(body_mass_g,na.rm=TRUE) #standard deviation calculation 
+    )
+print(biological_signal) #a much cleaner overview of the data set, allowing us to observe sexually dimorphic differences and species variation across the study area 
+```
+
+### Section 1.9: Integrating Data Grammer with Visual Diagnostics in Qmd 
+
+Data manipulation and visualisation are not separate tasks. 
+
+#### Section 1.9.2: Piping Directly to Visualisation
+
+You can skip creating a summary table if it is not necessary, and extend your pipeline directly into ggplot2.
+
+#### EXAMPLE: Visualising mean trends with uncertainty 
+
+Instead of created a summary table first, you can pipe your grouped data straight into a plot and use geom_errorbar() to represent the spread of your data 
+
+```{r}
+mass_compare_plot<-penguins|>
+  group_by(species,island)|>
+  summarise(
+    mean_mass=mean(body_mass_g,na.rm=TRUE),
+    sd_mass=sd(body_mass_g,na.rm=TRUE), 
+    n=n(),
+    .groups="drop"
+  ) |>
+  ggplot(aes(x=island,y=mean_mass,colour=island))+
+  geom_point(size=3)+
+  geom_errorbar(aes(ymin=mean_mass-sd_mass,
+                    ymax=mean_mass+sd_mass),
+                width=0.2)+
+  labs(title="Mean Body Mass By Species and Island",
+       subtitle="Error bars represent standard deviation",
+       y="Mean Body Mass (g)",
+       x="Island")+
+    scale_y_continuous(limits = c(1000, 6000))+ 
+    facet_wrap(~ species, ncol = 3, scales = "fixed")
+
+mass_compare_plot
+```
+
+#### PAUSE FOR THOUGHT - Think about what this figure is telling you about the biology of these species of penguins on different islands. What do you think a statistical test would tell you here? 
+
+Mean mass (g) of Adelie penguins is relatively similar across all three islands, and a statistical test would struggle to find a statistically significant difference between islands for this species. Whilst it is clear that Gentoo penguins ar the heaviest of the penguin species found on these islands, we do not have data on their mean mass on Dream or Torgensen Island, so unable to make any comments regarding biological differences within a species based on island location. The same is the case for Chinstrap penguns (although this time we only have data for Dream Island), and we can also see that the mean body mass is relatively similar for Adelie and Chinstrap penguins. 
+
+#### CHALLENGE - swap standard deviation for standard error and see how it changes the visual interpretation of your data
+
+```{r}
+mass_compare_plot_se<-penguins|>
+  group_by(species,island)|>
+  summarise(
+    mean_mass=mean(body_mass_g,na.rm=TRUE),
+    n=n(),
+    sd_mass=sd(body_mass_g,na.rm=TRUE),
+    se_error=(sd_mass/sqrt(n)), #standard error calculation, 
+    .groups="drop"
+  ) |>
+  ggplot(aes(x=island,y=mean_mass,colour=island))+
+  geom_point(size=3)+
+  geom_errorbar(aes(ymin=mean_mass-se_error,
+                    ymax=mean_mass+se_error),
+                width=0.2)+
+  labs(title="Mean Body Mass By Species and Island",
+       subtitle="Error bars represent standard deviation",
+       y="Mean Body Mass (g)",
+       x="Island")+
+    scale_y_continuous(limits = c(1000, 6000))+ 
+    facet_wrap(~ species, ncol = 3,scales="fixed")
+
+mass_compare_plot_se
+
+```
+Errors bars are now considerably smaller than when viewing the standard deviation error bars. This is because the standard error is a measure of how much the sample mean (mean_mass) is expected to vary from the true population mean, and it decreases as the sample size (n) increases. In contrast, the standard deviation (sd_mass) measures the variability of individual data points around the sample mean, regardless of sample size. Therefore, when we switch from standard deviation to standard error, we are accounting for the sample size in our error bars, which results in smaller error bars. 
+
+### Section 1.10: Saving, Exporting, and Version Milestones 
+
+In the future, you may encounter wrangling and analysis that takes signficant processing power and memory, meaning we may want to save them to our outputs. Before we do this, we need to check if we have the correct folders, and if not we can create them (see workbook for code). 
+
+Already exists in my directory : ) 
+
+#### EXAMPLE: Saving Tables (as a CSV or RDS object)
+
+```{r}
+write_csv(biological_signal,here::here("output/penguin_species_mass_summary.csv")) #saving our collapsed summary table as a universal flat text file
+
+#use here::here to specify R to search for output folder in main project folder 
+
+saveRDS(adelie_cohort,here::here("output/clean_adelie_morphology_cohort.rds"))
+
+```
+
+#### EXAMPLE: Figures 
+
+ggplot2 has an inbuilt function to save figures - ggsave() 
+
+```{r}
+#ggsave(here::here("output/mass_compare_se.png"),plot=mass_compare_plot_se,width=120,height=120,units="mm",dpi=300) #saved, but has crappy dimensions as it squishes the plot so you cannot read the axis labels 
+ggsave(here::here("output/mass_compare_se.png"),plot=mass_compare_plot_se,width=200,height=120,units="mm",dpi=300) #adjusted the width of the code and now all axis labels are readable : ) 
+ggsave(here::here("output/mass_compare_sd.png"),plot=mass_compare_plot,width=200,height=120,units="mm",dpi=300) #also saved sd plot 
+```
+

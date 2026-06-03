@@ -19,6 +19,7 @@
 
 # Folders to ignore
 archive/
+#outut/ removed output/ from ignored folders to figures could be pushed to github repo, can change later if needeed 
 
 # Keywords to ignore
 *archive

@@ -1,0 +1,436 @@
+---
+title: "MB5370 Module 2 Workshop 2"
+author: "Caitlin Buckle"
+date: "2026-06-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+	include = TRUE,
+	message = FALSE,
+	warning = FALSE)
+```
+
+Load necessary packages 
+```{r}
+library(tidyverse)
+library(palmerpenguins)
+library(lubridate)
+```
+
+### Section 2.2: Tidying Data 
+
+3 Rules to Consider a Data Set 'Tidy' (all interrelated)
+  1. Each variable must have its own column 
+  2. Each observation must have its own row 
+  3. Each value must have its own cell 
+  
+These rules lead to a simple set of practical instructions --> put each data set in a tibble (special data frame), and then put each variable in a column 
+
+Tidy data is useful data because having a consistent data structure makes it easier to learn the tools that work with it, and having your variables in columns allows R to use its ability to work with vectors of values (make transforming tidy data a smoother process). 
+
+### Section 2.3: Pivoting Data to Make it Tidy 
+
+1. Understand what each variable and observation actually means 
+2. Resolve one of the two common problems - one variable is spread across multiple columns or one observation is scattered across multiple rows 
+
+To fix these problems, we will pivot our data using two functions in tidyr - pivot_longer() to lengthen our data and pivot_wider() to widen data. 
+
+### Section 2.4: Lengthening Data Sets 
+
+pivot_longer() makes data sets 'longer' by increasing the number of rows and decreasing the number of columns, solving those common problems of data values in the variable name. Splits the data set by column and reformats it into the tidy format of observations as rows, columns as variables and values as cell entries --> changes the data set to be longer (more rows) than the original wider format (more columns). 
+
+#### EXAMPLE: 
+
+```{r}
+billboard #tibble about billboard rank of songs in 2000 
+#First three columns - artist, track, and date.entered 
+#Every column after is a week (76 columns) - NOT TIDY! The column names are a variable (e.g., Week 1) and the cell values are a variable too (ranking during that week)
+#Going to use pivot_longer() to tidy 
+billboard%>%
+  pivot_longer(
+    cols=starts_with("wk"), #specifies which column you want to pivot 
+    names_to="week", #names the variable that was stored in the column  
+    values_to="rank", #names the variable that was stored in the cell values 
+    values_drop_na=TRUE #removes all NA values that existed once a song was no longer in billboard for subsequent weeks 
+  )
+```
+
+#### EXAMPLE: Pivoting Longer 
+
+```{r}
+df <- tribble(
+  ~id,  ~bp1, ~bp2,
+   "A",  100,  120,
+   "B",  140,  115,
+   "C",  120,  125
+) #creates data set called df with 3 variables and associated values 
+#Want data set to have three variables - id (already exists), measurement (the column names), and value (cell values) - need to make it longer! 
+df%>%
+  pivot_longer(
+    cols=bp1:bp2, 
+    names_to="measurement", 
+    values_to="value"
+  )
+```
+
+### Section 2.5: Widening Datasets 
+
+pivot_wider() allows  us to handle an observation if it is scattered across multiple rows. 
+
+```{r}
+cms_patient_experience #each organisation is spread over 6 rows, each row for each measurement taken in the survey organisation 
+cms_patient_experience%>% 
+  pivot_wider( 
+    id_cols=starts_with("org"), #tells pivot_wider() which columns have values that uniquely identify each row 
+    names_from=measure_cd, #column name
+    values_from=prf_rate #existing columns that define the values 
+  )
+```
+
+#### EXAMPLE: pivot_wider() 
+
+```{r}
+df <- tribble(
+  ~id, ~measurement, ~value,
+  "A",        "bp1",    100,
+  "B",        "bp1",    140,
+  "B",        "bp2",    115, 
+  "A",        "bp2",    120,
+  "A",        "bp3",    105
+)
+
+df%>% 
+  pivot_wider(
+    names_from=measurement, #using names from measurement column 
+    values_from=value #cell values from value column 
+  )
+
+df%>% 
+  distinct(measurement)%>% 
+  pull() #pivot_wider needs to figure out what will go in the rows, tells it the new column names will be the unique values of 'measurement' column 
+
+df%>% 
+  select(-measurement,-value)%>%
+  distinct() #rows in the output are determined by all the variables that aren't going into new name or values (called id_cols)
+
+df%>% 
+  select(-measurement,-value)%>% 
+  distinct()%>%
+  mutate(x=NA,y=NA,z=NA) # pivot_wider() combines these results to generate an empty data frame 
+#It then fills in all the missing values using the data in the input 
+```
+
+### Section 2.6: Pivoting Exercises Using Palmer Penguins
+
+```{r}
+#Create a long version of the penguins data set
+penguins_long<-penguins%>%
+  pivot_longer(
+    cols=c(bill_length_mm,bill_depth_mm,flipper_length_mm,body_mass_g), #id's the columns you are wanting to pivot
+    names_to="measurement_type", #name of the new column 
+    values_to="value" #source the values from the cell values in original data set
+  )
+head(penguins_long) #measurement_type now a column, with each type a different row, and corresponding values in 'value' column 
+
+penguins_long%>% 
+  drop_na(value)%>% 
+  ggplot(aes(x=value,fill=species))+
+  geom_histogram(bins=30,alpha=0.7,colour="black")+
+  facet_wrap(~measurement_type,scales="free_x")+
+  theme_minimal()+
+  labs(
+    title="Morphometric Distributions Across Penguin Species",
+    x="Measurement Value", 
+    y="Frequency"
+  ) #lengthened formula of this data set is what is needed in ggplot for multi-panel faceting. ggplot2 generates panel for each measurement type, with x-axis based on the associated values from each measurement type, and y-axis showing the frequency. Plot is also coloured by species. 
+
+#EXAMPLE: Widen the penguin data set 
+
+#calculate mean body mass for each species on each island 
+mass_summary<-penguins%>% 
+  drop_na(body_mass_g)%>%
+  group_by(species,island)%>% 
+  summarise(mean_mass=mean(body_mass_g))
+head(mass_summary)
+
+mass_matrix<-mass_summary%>% 
+  pivot_wider( #using pivot_wider to pull island names into column to create clean matrix of species by island 
+    names_from=island, #new column header
+    values_from=mean_mass #which columns values populates the cells beneath the new column header 
+  )
+head(mass_matrix) #NA values in some areas, indicating clearly islands that don't have particular species (biological insight from a table!!)
+```
+
+### Section 2.7: Separating and Uniting Data Tables 
+
+```{r}
+table3 #one column (called rate) contains two variables (cases and population)
+
+#can use separate() function to separate one column into multiple columns 
+table3%>%
+  separate(rate,into=c("cases","population")) #cases now in one column, population in a different 
+#separate() will split values when it sees a non-alphanumeric character, if you want to specify the character, use sep="" argument within separate() 
+table3%>%
+  separate(rate,into=c("cases","population"),,sep="/")
+#both cases and population are listed as characters (this is the default of separate()), can ask separate() to convert them to better types using convert=TRUE 
+table3%>%
+  separate(rate,into=c("cases","population"),sep="/",convert=TRUE) #now stored as integers 
+#can also pass a vector of integers to sep for separate() to interpret and split at, when using integers to separate strings, the length of sep should be one less than the number of name in into 
+table3%>% 
+  separate(year,into=c("century","year"),sep=2) #separates the last two digits of each year 
+```
+
+Can use unite() to combine multiple columns into a single column 
+```{r}
+table5 #century in one column, year in another 
+
+table5%>% 
+  unite(new,century,year,sep="") #combines century and year into new column called "new" 
+#added sep="" because we don't want any separator and the default is for unite() to add an underscore 
+```
+
+### Section 2.8: Wrangling Strings and Dates 
+
+Before we merge data sets or plot timelines, we need to standardise our text strings and date-times - can use stringr for text and lubridate for dates (in the tidyverse package). 
+
+#### EXAMPLE: Standardising Text 
+
+```{r}
+messy_sites <- tibble(
+  site_id = c(" Nelly Bay", "nelly_bay", "NELLY BAY", " Geoffrey_Bay ", "geoffrey bay")
+) #different spellings, capitalisations etc. 
+
+#use stringr within mutate to standardise the text 
+clean_sites<-messy_sites%>% 
+  mutate(
+    site_clean=str_to_lower(site_id), #convert everything to lower case
+    site_clean=str_trim(site_clean), #trim any leading or trailing whitespace (invisible spaces at the end of names)
+    site_clean=str_replace_all(site_clean,pattern=" ",replacement="_") #replace spaces (telling it to look for spaces with pattern=" " ) with underscores (replacement="_")
+  )
+print(clean_sites) #now all id's formed into two clean categories = nelly_bay and geoffrey_bay 
+
+#NOTE: had to move str_trim to being above str_replace_all as we were telling mutate() to replace " " with "_" first originally, which means there was no " " to remove with str_trim() 
+```
+
+#### EXAMPLE: Standardising Date-Time 
+
+```{r}
+# Parsing different date formats
+date_1 <- dmy("25/12/2026")
+date_2 <- ymd("2026-12-25")
+
+# R now recognizes these as identical Date objects
+date_1 == date_2 # TRUE 
+
+# A tibble of raw sensor data with a messy character time stamp
+sensor_data <- tibble(
+  raw_time = c("14-05-2026 08:30:00", "14-05-2026 08:45:00", "14-05-2026 09:00:00"),
+  temperature = c(24.5, 24.6, 24.4)
+)
+
+sensor_clean<-sensor_data%>%
+  mutate(
+    true_time=dmy_hms(raw_time) #telling mutate that our preferred time structure is day-month-year-hour-minute-second 
+  )
+print(sensor_clean) 
+```
+
+Once a column is a recognised datetime object, ggplot2 will automatically understand how to format the x-axis chronologically, and you can easily extract specific components (e.g., using month(true_time) to get the month integer). 
+
+### Section 2.9: Relational Data: Joining Tables 
+
+Sometimes you may have data split across two tables for simplification reasons (e.g., location_id in one table, specific GPS way points in another). Can use dplyr package to join the tables. 
+
+```{r}
+# Table 1: Biological observation data
+observations <- tibble(
+  site_code = c("NB", "GB", "MI", "NB"),
+  species = c("Trout", "Snapper", "Trout", "Cod"),
+  count = c(5, 2, 1, 3)
+)
+
+# Table 2: Spatial metadata
+site_metadata <- tibble(
+  site_code = c("NB", "GB", "MI", "RP"),
+  zone = c("Marine National Park", "Conservation Park", "Habitat Protection", "General Use"),
+  lat = c(-19.16, -19.15, -19.14, -19.12)
+)
+
+#Workhorse: using left_join() - keeps all the rows from your left table and matches data from your right table wherever the key matches
+joined_data<-observations %>%
+  left_join(site_metadata,by=join_by(site_code))
+print(joined_data) #every row of biological data has a zone and latitude attached to it - perfect!
+
+#Strict Filter: inner_join() - only keeps rows that have complete matches in both tables (if an observation occurs at a site that isn't listed in the metadata, that observation will be entirely dropped from the data set)
+matched_data<-observations%>% 
+  inner_join(site_metadata,by=join_by(site_code)) #only use this is you want to analyse data that has complete spatial or environmental context!! 
+print(matched_data)
+
+#The Detective: anti_join() - does not add new columns, instead it filters your left table to only show rows that do not have a match in the right table - incredibly powerful diagnostic tool!! If you try a left_join() and end up with unexpected NA values, use an anti_join() to find out exactly which site codes are misspelled or missing from your metadata table.
+missing_context<-observations%>%
+  anti_join(site_metadata,by=join_by(site_code))
+print(missing_context) #which observations are missing from our metadata dictionary? 
+```
+
+### Section 2.10: Handling Missing Data Values 
+
+#### Converting legacy errors with na_if()
+
+Some kinds of equipment can place a concrete value to represent a missing value (-99, -999 etc). These concrete values can interfere with mean calculations etc.
+
+```{r}
+# Raw data from an old temperature logger
+logger_data <- tibble(
+  depth_m = c(10, 20, 30, 40),
+  temp_c = c(24.5, 24.1, -999, 23.5)) # -999 is a known sensor error code
+
+# Convert the -999 error codes to true NA values
+fixed_logger <- logger_data |>
+  mutate(temp_c = na_if(temp_c, -999)) 
+
+print(fixed_logger) #should always try and fix these errors as soon as you import the data 
+```
+
+#### Replacing missing values with coalesce()
+
+Sometimes an NA can mean that the value is a known fixed number (most often 0), e.g., a surveyor leaves a cell blank on a clipboard to indicate they saw 0 sharks, but R will import that blank cell as NA. Can use dplyr::coalesce() inside a mutate() to hunt down every NA in a specific column and replace it with 0 (or any other fixed value). 
+
+```{r}
+# Simulate some count data
+shark_counts <- tibble(
+  site = c("Reef_A", "Reef_B", "Reef_C"),
+  shark_count = c(3, NA, 5)) # The NA here actually means 0 sharks were seen
+
+# Replace NA with 0 
+shark_fixed <- shark_counts |>
+  mutate(shark_count = coalesce(shark_count, 0))
+
+print(shark_fixed)
+```
+
+#### NaN (not a number)
+Nan (not a number) means this value you have entered is mathematically impossible. Often occurs when you perform a mathematical operation that has an indeterminate results (e.g., 0/0). 
+
+```{r}
+cpue_data <- tibble(
+  site = c("Bay_1", "Bay_2"),
+  catch = c(10, 0),
+  effort_hours = c(2, 0))
+
+# Calculating CPUE (catch / effort)
+cpue_calc <- cpue_data |>
+  mutate(
+    cpue = catch / effort_hours)
+
+print(cpue_calc) #Bay 2 CPUE shows NaN 
+#R generally treats NaN identically to NA (drop_na() will remove both), but you can also isolate NaN using is.nan()
+```
+
+#### Implicit missing values and the zero-data framework: complete() 
+
+In ecology, knowing where a species was not found is just as important as knowing where it was found. 
+
+```{r}
+raw_catch <- tibble(
+  site = c("Reef_1", "Reef_1", "Reef_2"),
+  species = c("Pmaculatus", "Pleopardus", "Pmaculatus"),
+  count = c(5, 2, 8)) #raw catch log of coral trout species, only lists what was caught 
+
+#raw_catch implies that Reef_2 was surveyed but no P. leopardus was found there. If we calculate the mean catch of P. leopardus across all sites, base R will tell us it is 2 (because it only knows about Reef_1). Ecologically, the mean should be 1 (2 at Reef_1, and 0 at Reef_2). 
+#Can use tidyr::complete() to build a zero-data framework - finds all unique combinations of the variables you supply, explicitly creating rows for the missing combinations, and allows you til fill the resulting NAs with 0 
+
+# Force inclusion of hidden zero-catch data
+full_catch_matrix <- raw_catch |>
+  complete(site, species, fill = list(count = 0))
+
+print(full_catch_matrix) #Reef_2 now explicitly lists Pleopardus as 0 - important prerequisite before doing GLMs or other analyses 
+```
+
+#### Nuclear option: drop_na() 
+
+If an NA represents a failed reading, and that reading is the core variable of your analysis, you may have no choice but to remove the entire row - can do this using drop_na() 
+
+```{r}
+sensor_log <- tibble(
+  day = 1:4,
+  salinity = c(35.2, 35.1, NA, 35.3)
+)
+print(sensor_log) #day 3 has a salinity of N/A 
+
+# Remove any row where salinity is missing
+clean_log <- sensor_log |>
+  drop_na(salinity)
+
+print(clean_log) #have now removed day 3 entirely from the tibble 
+```
+
+### PRACTICAL EXERCISE: PENGUINS, PIVOTS, AND RELATIONAL DATA
+
+In this exercise, you will combine all the skills you have learned in this workshop. You have the clean penguins dataset, but a colleague has just emailed you a supplementary metadata file containing the GPS coordinates and the date the primary weather stations were installed on each island.
+
+Unfortunately, your colleague is not very good at standardising their data entry.
+
+#### EXERCISE ONE: Cleaning messy data 
+
+```{r}
+# The messy metadata provided by your colleague
+island_metadata <- tibble(
+  island_name = c(" biscoe", "Dream ", "Torgersen"),
+  station_install = c("15/01/2003", "22-03-2004", "05/11/2001"),
+  latitude = c(-64.81, -64.73, -64.76)
+)
+
+print(island_metadata)
+
+#TASK: create new object called clean_metadata. Using mutate(), stringr and lubridate, fix the island_name column so that it perfectly matches the island column in the penguins data set. Then, convert the station_install column into a proper data object. 
+
+clean_metadata<-island_metadata%>% 
+  mutate(
+    island=str_to_title(island_name), #to capitalise the first letter of the island 
+    island=str_trim(island) #trim any leading or trailing whitespace (using the island column created above [was overwriting the str_to_title by using the island_name column before]) 
+  )
+
+print(clean_metadata) #new column called island (like penguins), with correct island names (like penguins )
+?stringr #used to check if I could use a different str_to_? function to capitalise the first letter (so it matches the penguins dataset)
+
+metadata_dated<-clean_metadata%>%
+  mutate(
+    true_time=dmy(station_install) #telling mutate that our preferred time structure is day-month-year-hour-minute-second 
+  )
+print(metadata_dated) 
+```
+
+#### EXERCISE TWO: THE RELATIONAL JOIN 
+
+```{r}
+penguins_spatial<-penguins%>%
+  left_join(metadata_dated,by=join_by(island)) #can use island as used island as the column name when correcting the formatting of the island names in Exercise One :) 
+print(penguins_spatial)
+```
+
+#### EXERCISE THREE: THE WIDE SUMMARY MATRIX 
+
+```{r}
+#Drop any missing values in body_mass_g column 
+# Remove any row where salinity is missing
+penguins_spatial_clean<-penguins_spatial%>%
+  drop_na(body_mass_g)
+
+print(penguins_spatial_clean)
+summary(penguins_spatial_clean)
+
+#Group by species and island 
+penguins_spatial_clean%>%
+  group_by(species,island)%>%
+  summarise(max_body_mass=max(body_mass_g))%>%
+  pivot_wider(
+    names_from=island, #asking the island names to be the columns  
+    values_from=max_body_mass #cell values under the islands should be max_body_mass (g)
+  )
+```
+
+### Section 2.12: Keystone Exercise: Estuary FIsh Survey - Data Rescue Mission 
+
+See MB5370_Workshop_2_Keystone.qmd for exercise. 
